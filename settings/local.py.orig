@@ -1,0 +1,40 @@
+import os
+
+from abc import ABC
+
+from apps.celery import Celery
+from storages.backends.s3boto3 import S3Boto3Storage
+
+
+from settings.base import *
+
+SECRET_KEY = os.environ["SECRET_KEY"]
+DEBUG = True
+
+
+class MinioMediaStorage(S3Boto3Storage, ABC):
+    location = 'media'
+    file_overwrite = False
+
+
+class MinioStaticStorage(S3Boto3Storage, ABC):
+    location = 'static'
+
+
+STORAGES = {
+    "default": {
+        "BACKEND": "settings.local.MinioMediaStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "settings.local.MinioStaticStorage",
+    },
+}
+
+AWS_ACCESS_KEY_ID = os.environ.get('MINIO_ACCESS_KEY', 'access_key')
+AWS_SECRET_ACCESS_KEY = os.environ.get('MINIO_SECRET_KEY', 'secret_key')
+AWS_STORAGE_BUCKET_NAME = os.environ.get('MINIO_PUBLIC_BUCKET_NAME', 'django-backend-dev-public')
+AWS_S3_ENDPOINT_URL = os.environ.get('MINIO_ENDPOINT', 'http://minio:9000')
+
+
+CELERY_BROKER_URL = "amqp://guest:guest@localhost:5672/myvhost"
+CELERY_RESULT_BACKEND = "django-db"

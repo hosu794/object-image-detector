@@ -1,0 +1,132 @@
+version: '3.7'
+services:
+  app:
+    build:
+      context: .
+    image: app
+    restart: always
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - minio
+      - rabbitmq
+      - redis
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  db:
+    image: postgres:13
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env
+    ports:
+      - "${SQL_PORT}:${SQL_PORT}"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  minio:
+    image: quay.io/minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - .env
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  create-buckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      apk add nc &&
+      while ! nc -z minio 9000; do echo 'Wait minio to startup...' && sleep 0.1; done; sleep 5 &&
+      /usr/bin/mc config host add myminio http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD;
+      /usr/bin/mc mb myminio/$MINIO_PUBLIC_BUCKET_NAME;
+      /usr/bin/mc policy download myminio/$MINIO_PUBLIC_BUCKET_NAME;
+      exit 0;
+      "
+    env_file:
+      - .env
+  rabbitmq:
+    image: rabbitmq:3.8.19-management-alpine
+    container_name: rabbitmq
+    hostname: rabbit_node_1
+    environment:
+        - RABBITMQ_DEFAULT_USER=guest
+        - RABBITMQ_DEFAULT_PASS=guest
+    ports:
+        - "5672:5672"
+        - "15672:15672"
+    volumes:
+      - ./rabbitmq_data:/var/lib/rabbitmq
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  celery_worker:
+    build:
+      context: .
+    command: celery -A apps worker --loglevel=info
+    depends_on:
+      - rabbitmq
+      - app
+    env_file:
+      - .env
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  celery_beat:
+    build:
+      context: .
+    command: celery -A apps beat --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    depends_on:
+      - rabbitmq
+      - app
+    env_file:
+      - .env
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+  redis:
+    restart: unless-stopped
+    image: redis:7.0.5-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - cache:/data
+    env_file:
+      - .env
+  redis-commander:
+      image: rediscommander/redis-commander:latest
+      environment:
+        - REDIS_HOSTS=local:redis:6379
+        - HTTP_USER=root
+        - HTTP_PASSWORD=qwerty
+      ports:
+        - 8081:8081
+      depends_on:
+        - redis
+volumes:
+  postgres_data:
+  minio_data:
+  rabbitmq_data:
+  cache:

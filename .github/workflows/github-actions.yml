@@ -1,0 +1,20 @@
+name: Docker Compose Actions Workflow
+on: push
+
+jobs:
+  build-format-test:
+    runs-on: ubuntu-latest
+    env:
+      ENV_FILE: ${{ secrets.ENV_FILE }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Load env
+        run: echo "$ENV_FILE" > .env
+      - name: Build the stack
+        run: docker-compose build
+      - name: Create bucket
+        run: docker-compose run create-buckets
+      - name: Test
+        run: docker-compose run app python manage.py test
+      - name: Format check
+        run: docker-compose run app make format-check
